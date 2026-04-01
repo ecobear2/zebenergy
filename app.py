@@ -8,16 +8,8 @@ import os
 import urllib.request
 from matplotlib import font_manager
 
-# 한글 폰트 자동 설정
-font_path = "NanumGothic.ttf"
-
-if not os.path.exists(font_path):
-    urllib.request.urlretrieve(
-        "https://github.com/naver/nanumfont/raw/master/fonts/NanumGothic.ttf",
-        font_path
-    )
-
-font_manager.fontManager.addfont(font_path)
+# 한글 폰트 설정 (로컬 파일 사용)
+font_manager.fontManager.addfont('NanumGothic-Regular.ttf')
 matplotlib.rcParams['font.family'] = 'NanumGothic'
 matplotlib.rcParams['axes.unicode_minus'] = False
 
