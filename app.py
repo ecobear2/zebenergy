@@ -4,8 +4,23 @@ import numpy as np
 import joblib
 import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.rcParams['font.family'] = 'Malgun Gothic'
+import os
+import urllib.request
+from matplotlib import font_manager
+
+# 한글 폰트 자동 설정
+font_path = "NanumGothic.ttf"
+
+if not os.path.exists(font_path):
+    urllib.request.urlretrieve(
+        "https://github.com/naver/nanumfont/raw/master/fonts/NanumGothic.ttf",
+        font_path
+    )
+
+font_manager.fontManager.addfont(font_path)
+matplotlib.rcParams['font.family'] = 'NanumGothic'
 matplotlib.rcParams['axes.unicode_minus'] = False
+
 
 # ── 모델 불러오기 ──────────────────────────────
 model_자립률    = joblib.load('model_자립률.pkl')
