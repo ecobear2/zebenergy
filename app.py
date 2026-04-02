@@ -153,27 +153,32 @@ with st.form("input_form"):
     st.subheader("☀️ 태양광 설비 정보")
     col4, col5, col6 = st.columns(3)
     with col4:
-        태양광타입 = st.radio("태양광 패널 유형", ["후면개방형", "밀착형"])
-        태양광면적 = st.number_input("태양광 패널 면적 (㎡)", min_value=0,
-                                     max_value=50000, value=0, step=10)
+        태양광타입 = st.radio("태양광 설치 타입", ["후면통풍형", "밀착형"],
+                             horizontal=True)
+        태양광면적_입력 = st.number_input("태양광 면적 (㎡)",
+                                         min_value=0.0, value=0.0, step=10.0)
     with col5:
-        효율 = st.slider("태양광 효율 보정 계수", min_value=0.80,
-                         max_value=1.20, value=1.00, step=0.01)
-
-        후면 = 태양광면적 * 효율 if 태양광타입 == "후면개방형" else 0
-        밀착 = 태양광면적 * 효율 if 태양광타입 == "밀착형"    else 0
-
-        보정면적 = 후면 if 태양광타입 == "후면개방형" else 밀착
-        if 태양광면적 > 0:
-            st.caption(f"📐 보정 후 실제 적용 면적: **{보정면적:.1f} ㎡**")
+        효율입력여부 = st.checkbox("태양광 효율 직접 입력할게요")
+        if 효율입력여부:
+            태양광효율 = st.number_input("태양광 효율 (%)",
+                min_value=0.0, max_value=100.0, value=20.0, step=0.5)
+            보정면적 = 태양광면적_입력 / 12 * 태양광효율
+            st.caption(f"💡 보정 면적: {보정면적:.1f} ㎡")
         else:
-            st.caption("📐 보정 후 실제 적용 면적: -")
+            보정면적 = 태양광면적_입력
+
+        if 태양광타입 == '후면통풍형':
+            후면 = 보정면적
+            밀착 = 보정면적 * (0.12 / 0.112)
+        else:
+            밀착 = 보정면적
+            후면 = 보정면적 * (0.112 / 0.12)
 
     with col6:
         지열  = st.checkbox("지열 설비 있음")
         열병합 = st.checkbox("열병합 설비 있음")
 
-    태양광용량 = 0  # kW 미사용 (면적 기반 계산)
+    태양광용량 = 0
 
 
     예측버튼 = st.form_submit_button("🔍 예측하기", use_container_width=True)
