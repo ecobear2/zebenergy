@@ -34,7 +34,6 @@ def load_models():
     f_1차에너지  = joblib.load(os.path.join(BASE_DIR, 'interp_1차에너지.pkl'))
     return m_자립, m_1차, le_dict, feat_cols, f_자립률, f_1차에너지
 
-
 @st.cache_data
 def load_data():
     scatter = pd.read_csv(os.path.join(BASE_DIR, 'df_scatter.csv'))
@@ -87,7 +86,6 @@ def predict(지역, 용도, 용도구분, 연면적, 창면적비,
     def calc_grade(자립률, 에너지1차, 용도구분):
         order = ['+', '1', '2', '3', '4', '5']
 
-        # 자립률 기준
         if   자립률 >= 120: g1 = '+'
         elif 자립률 >= 100: g1 = '1'
         elif 자립률 >= 80:  g1 = '2'
@@ -96,7 +94,6 @@ def predict(지역, 용도, 용도구분, 연면적, 창면적비,
         elif 자립률 >= 20:  g1 = '5'
         else:               g1 = None
 
-        # 1차에너지 기준 (주거용 / 비주거용 다름)
         if 용도구분 == '주거용':
             thresholds = [(60,'+'), (90,'1'), (120,'2'),
                           (150,'3'), (190,'4'), (230,'5')]
@@ -110,7 +107,6 @@ def predict(지역, 용도, 용도구분, 연면적, 창면적비,
                 g2 = grade
                 break
 
-        # 둘 중 더 좋은 등급 선택
         if g1 is None and g2 is None:
             return '인증불가'
         if g1 is None: return g2
@@ -121,131 +117,155 @@ def predict(지역, 용도, 용도구분, 연면적, 창면적비,
 
     return 자립률예측, 에너지예측1차, 태양광비율, 등급예측
 
+# ─────────────────────────────────────────────
+# 3. UI
+# ─────────────────────────────────────────────
+st.set_page_config(
+    page_title="제로에너지 건축물 사전 예측",
+    page_icon="🏢",
+    layout="wide"
+)
+
+st.title("🏢 제로에너지 건축물 인증 사전 예측")
+st.caption("설계 전 대략적인 에너지자립률과 인증 등급을 예측해드려요!")
+st.divider()
+
+st.subheader("📥 건물 정보 입력")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.markdown("**📍 기본 정보**")
+    지역 = st.selectbox("지역",
+        ['강원','경기','경남','경북','광주','대구',
+         '대전','부산','서울','세종','울산','인천',
+         '전남','전북','제주','충남','충북'])
+
+    건물용도 = st.selectbox("건물 용도",
+        sorted(le_dict['건물용도'].classes_.tolist()))
+
+    연면적 = st.number_input("연면적 (m²)",
+        min_value=0.0, value=3000.0, step=100.0)
+
+    창면적비 = st.number_input("창면적비 (%)",
+        min_value=0.0, max_value=100.0, value=25.0, step=1.0)
+
+with col2:
+    st.markdown("**🌡️ 설비 정보**")
+    난방방식 = st.selectbox("난방 방식",
+        ['히트펌프', '보일러', '지역난방', '기타'])
+
+    냉방방식 = st.selectbox("냉방 방식",
+        ['압축식', '흡수식', '냉방없음', '기타'])
+
+    지열여부 = st.radio("지열 설치",
+        ['없음', '있음'], horizontal=True)
+
+    열병합여부 = st.radio("열병합 설치",
+        ['없음', '있음'], horizontal=True)
+
+with col3:
+    st.markdown("**☀️ 태양광 정보**")
+    태양광타입 = st.radio("태양광 설치 타입",
+        ['후면통풍형', '밀착형'], horizontal=True)
+
+    태양광면적_입력 = st.number_input("태양광 면적 (m²)",
+        min_value=0.0, value=300.0, step=10.0)
+
+    효율입력여부 = st.checkbox("태양광 효율 직접 입력할게요")
+    if 효율입력여부:
+        태양광효율 = st.number_input("태양광 효율 (%)",
+            min_value=0.0, max_value=100.0, value=20.0, step=0.5)
+        보정면적 = 태양광면적_입력 / 12 * 태양광효율
+        st.caption(f"💡 보정 면적: {보정면적:.1f} m²")
+    else:
+        보정면적 = 태양광면적_입력
+
+    if 태양광타입 == '후면통풍형':
+        후면 = 보정면적
+        밀착 = 보정면적 * (0.12 / 0.112)
+    else:
+        밀착 = 보정면적
+        후면 = 보정면적 * (0.112 / 0.12)
+
+st.divider()
 
 # ─────────────────────────────────────────────
-# 3. UI - 메인 화면 입력폼
+# 4. 예측 실행
 # ─────────────────────────────────────────────
-st.set_page_config(page_title="제로에너지 자립률 예측기", layout="wide")
-st.title("🏢 제로에너지 건축물 자립률 예측기")
-st.markdown("건물 정보를 입력하면 **에너지 자립률**, **1차에너지소요량**, **인증 등급**을 예측합니다.")
-st.markdown("---")
+if st.button("🔍 예측하기", type="primary", use_container_width=True):
 
-지역_목록 = list(le_dict['신청지역'].classes_)
-용도_목록 = list(le_dict['건물용도'].classes_)
+    # 용도구분 판단
+    용도구분 = "주거용" if '주거' in 건물용도 and '이외' not in 건물용도 else "주거용 이외"
 
-# ── 입력폼 ────────────────────────────────────
-with st.form("input_form"):
-    st.subheader("📋 건물 기본 정보")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        지역    = st.selectbox("지역", 지역_목록)
-        용도    = st.selectbox("건물용도", 용도_목록)
-    with col2:
-        용도구분 = st.radio("건물용도구분", ["주거용 이외", "주거용"])
-        연면적   = st.number_input("연면적 (㎡)", min_value=100,
-                                   max_value=500000, value=5000, step=100)
-    with col3:
-        창면적비 = st.slider("창면적비 (%)", min_value=0, max_value=100, value=25)
-        난방     = st.selectbox("난방방식", ["히트펌프", "보일러", "지역난방", "기타"])
-        냉방     = st.selectbox("냉방방식", ["압축식", "흡수식", "냉방없음", "기타"])
-
-    st.markdown("---")
-    st.subheader("☀️ 태양광 설비 정보")
-    col4, col5, col6 = st.columns(3)
-    with col4:
-        태양광타입 = st.radio("태양광 설치 타입", ["후면통풍형", "밀착형"],
-                             horizontal=True)
-        태양광면적_입력 = st.number_input("태양광 면적 (㎡)",
-                                         min_value=0.0, value=0.0, step=10.0)
-    with col5:
-        효율입력여부 = st.checkbox("태양광 효율 직접 입력할게요")
-        if 효율입력여부:
-            태양광효율 = st.number_input("태양광 효율 (%)",
-                min_value=0.0, max_value=100.0, value=20.0, step=0.5)
-            보정면적 = 태양광면적_입력 / 12 * 태양광효율
-            st.caption(f"💡 보정 면적: {보정면적:.1f} ㎡")
-        else:
-            보정면적 = 태양광면적_입력
-
-        if 태양광타입 == '후면통풍형':
-            후면 = 보정면적
-            밀착 = 보정면적 * (0.12 / 0.112)
-        else:
-            밀착 = 보정면적
-            후면 = 보정면적 * (0.112 / 0.12)
-
-    with col6:
-        지열  = st.checkbox("지열 설비 있음")
-        열병합 = st.checkbox("열병합 설비 있음")
-
-    태양광용량 = 0
-
-
-    예측버튼 = st.form_submit_button("🔍 예측하기", use_container_width=True)
-
-# ─────────────────────────────────────────────
-# 4. 예측 결과
-# ─────────────────────────────────────────────
-if 예측버튼:
     자립률, 에너지1차, 태양광비율, 등급 = predict(
-        지역, 용도, 용도구분, 연면적, 창면적비,
-        난방, 냉방, 태양광용량, 후면, 밀착,
-        int(지열), int(열병합)
+        지역, 건물용도, 용도구분, 연면적, 창면적비,
+        난방방식, 냉방방식, 0, 후면, 밀착,
+        1 if 지열여부 == '있음' else 0,
+        1 if 열병합여부 == '있음' else 0
     )
 
-    등급_이모지 = {'+':'🏆','1':'🥇','2':'🥈','3':'🥉',
-                  '4':'🌿','5':'🌱','인증불가':'❌'}.get(등급, '❓')
-
-    st.markdown("---")
+    # ── 결과 표시 ──────────────────────────────
     st.subheader("📊 예측 결과")
 
-    # ── 결과 메트릭 ───────────────────────────
     r1, r2, r3 = st.columns(3)
-    r1.metric("⚡ 에너지 자립률",   f"{자립률:.1f}%")
-    r2.metric("🔋 1차에너지소요량", f"{에너지1차:.1f} kWh/㎡·년")
-    r3.metric("🏅 예측 등급",       f"{등급_이모지} {등급}")
 
-    # ── 안내 메시지 ───────────────────────────
-    if 자립률 >= 100:
-        st.success("✅ 에너지 자립률 100% 이상! 제로에너지 건축 1등급 가능성 있습니다.")
-    elif 자립률 >= 80:
-        st.success(f"✅ 자립률 {자립률:.1f}% - 제로에너지 건축 2등급 수준입니다.")
-    elif 자립률 >= 60:
-        st.info(f"💡 자립률 {자립률:.1f}% - 제로에너지 건축 3등급 수준입니다.")
-    elif 자립률 >= 40:
-        st.info(f"💡 자립률 {자립률:.1f}% - 제로에너지 건축 4등급 수준입니다.")
-    elif 자립률 >= 20:
-        st.warning(f"⚠️ 자립률 {자립률:.1f}% - 제로에너지 건축 5등급 수준입니다.")
+    with r1:
+        st.metric(label="⚡ 에너지자립률", value=f"{자립률:.1f}%")
+
+    with r2:
+        st.metric(label="🔋 1차에너지소요량",
+                  value=f"{에너지1차:.1f} kWh/㎡·년",
+                  help="⚠️ 참고용 예측값이에요, 오차가 클 수 있어요!")
+
+    with r3:
+        등급_이모지 = {'+':'🥇','1':'🥈','2':'🥉',
+                      '3':'🏅','4':'🎖️','5':'📋','인증불가':'❌'}
+        if 등급 != '인증불가':
+            st.metric(label="🏢 예측 등급",
+                      value=f"{등급_이모지.get(등급,'')} {등급}등급")
+        else:
+            st.metric(label="🏢 예측 등급", value="❌ 인증불가")
+
+    # 안내 메시지
+    if 등급 == '인증불가':
+        st.error("⚠️ 현재 조건으로는 인증이 어려워요! 태양광을 늘려보세요!")
+    elif 등급 in ['+', '1', '2']:
+        st.success("🎉 우수한 등급이 예상돼요!")
+    elif 등급 in ['3', '4']:
+        st.info("👍 양호한 등급이 예상돼요!")
     else:
-        st.error(f"❌ 자립률 {자립률:.1f}% - 재생에너지 설비 도입이 필요합니다.")
+        st.warning("💡 태양광을 조금 더 늘리면 더 높은 등급을 받을 수 있어요!")
 
-    st.markdown("---")
+    st.divider()
 
-    # ── 탭 구성 ──────────────────────────────
+    # ── 탭: 시각화 ─────────────────────────────
     tab1, tab2, tab3 = st.tabs(["📈 태양광 면적별 예측", "🗺️ 전체 데이터 분포", "📊 등급 기준 비교"])
 
-    # ── Tab 1: 태양광 면적 변화 ───────────────
     with tab1:
         st.subheader("태양광 면적에 따른 자립률 · 1차에너지 변화")
         면적_범위 = np.linspace(0, min(연면적 * 0.6, 10000), 40)
         자립_목록, 에너지_목록 = [], []
         for 면 in 면적_범위:
-            h = 면 * 효율 if 태양광타입 == "후면개방형" else 0
-            m_val = 면 * 효율 if 태양광타입 == "밀착형" else 0
-            z, e, _, _ = predict(지역, 용도, 용도구분, 연면적, 창면적비,
-                                  난방, 냉방, 태양광용량, h, m_val,
-                                  int(지열), int(열병합))
+            if 태양광타입 == '후면통풍형':
+                h, m_val = 면, 면 * (0.12 / 0.112)
+            else:
+                m_val, h = 면, 면 * (0.112 / 0.12)
+            z, e, _, _ = predict(지역, 건물용도, 용도구분, 연면적, 창면적비,
+                                  난방방식, 냉방방식, 0, h, m_val,
+                                  1 if 지열여부 == '있음' else 0,
+                                  1 if 열병합여부 == '있음' else 0)
             자립_목록.append(z)
             에너지_목록.append(e)
 
         fig1, ax1 = plt.subplots(figsize=(9, 4))
         ax2 = ax1.twinx()
-        ax1.plot(면적_범위, 자립_목록,  color='steelblue', lw=2, label='자립률 (%)')
+        ax1.plot(면적_범위, 자립_목록, color='steelblue', lw=2, label='자립률 (%)')
         ax2.plot(면적_범위, 에너지_목록, color='tomato', lw=2,
                  linestyle='--', label='1차에너지')
-        if 태양광면적 > 0:
-            ax1.axvline(태양광면적, color='green', linestyle=':',
-                        lw=1.5, label=f'현재 {태양광면적}㎡')
+        if 태양광면적_입력 > 0:
+            ax1.axvline(보정면적, color='green', linestyle=':',
+                        lw=1.5, label=f'현재 {보정면적:.0f}㎡')
         ax1.set_xlabel("태양광 면적 (㎡)")
         ax1.set_ylabel("자립률 (%)", color='steelblue')
         ax2.set_ylabel("1차에너지소요량 (kWh/㎡·년)", color='tomato')
@@ -255,7 +275,6 @@ if 예측버튼:
         ax1.grid(True, alpha=0.3)
         st.pyplot(fig1)
 
-    # ── Tab 2: 산점도 ─────────────────────────
     with tab2:
         st.subheader("전체 데이터 분포에서 내 건물 위치")
         sample = df_scatter.sample(min(3000, len(df_scatter)), random_state=42)
@@ -280,7 +299,6 @@ if 예측버튼:
         ax.grid(True, alpha=0.3)
         st.pyplot(fig2)
 
-    # ── Tab 3: 등급 기준 ──────────────────────
     with tab3:
         st.subheader("등급별 자립률 기준")
         등급_기준 = {'+등급': 120, '1등급': 100, '2등급': 80,
@@ -297,5 +315,5 @@ if 예측버튼:
         ax.grid(True, alpha=0.3)
         st.pyplot(fig3)
 
-    st.markdown("---")
+    st.divider()
     st.caption("※ 본 예측기는 실제 인증 결과와 ±5~10% 오차가 있을 수 있습니다. 정확한 인증은 공인 평가기관을 통해 확인하세요.")
