@@ -26,24 +26,26 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 @st.cache_resource
 def load_models():
-    m_자립      = joblib.load(os.path.join(BASE_DIR, 'model_자립률.pkl'))
-    m_1차       = joblib.load(os.path.join(BASE_DIR, 'model_1차에너지.pkl'))
-    le_dict     = joblib.load(os.path.join(BASE_DIR, 'le_dict.pkl'))
-    feat_cols   = joblib.load(os.path.join(BASE_DIR, 'feature_columns.pkl'))
-    f_자립률    = joblib.load(os.path.join(BASE_DIR, 'interp_자립률.pkl'))
-    f_1차에너지  = joblib.load(os.path.join(BASE_DIR, 'interp_1차에너지.pkl'))
-    return m_자립, m_1차, le_dict, feat_cols, f_자립률, f_1차에너지
+    m_direct_자립 = joblib.load(os.path.join(BASE_DIR, 'model_direct_자립률.pkl'))
+    m_direct_1차  = joblib.load(os.path.join(BASE_DIR, 'model_direct_1차에너지.pkl'))
+    m_resid_자립  = joblib.load(os.path.join(BASE_DIR, 'model_resid_자립률.pkl'))
+    m_resid_1차   = joblib.load(os.path.join(BASE_DIR, 'model_resid_1차에너지.pkl'))
+    le_dict       = joblib.load(os.path.join(BASE_DIR, 'le_dict.pkl'))
+    feat_cols     = joblib.load(os.path.join(BASE_DIR, 'feature_columns.pkl'))
+    f_자립률      = joblib.load(os.path.join(BASE_DIR, 'interp_자립률.pkl'))
+    f_1차에너지   = joblib.load(os.path.join(BASE_DIR, 'interp_1차에너지.pkl'))
+    return m_direct_자립, m_direct_1차, m_resid_자립, m_resid_1차, le_dict, feat_cols, f_자립률, f_1차에너지
 
 @st.cache_data
 def load_data():
     scatter = pd.read_csv(os.path.join(BASE_DIR, 'df_scatter.csv'))
     return scatter
 
-m_자립, m_1차, le_dict, feat_cols, f_자립률, f_1차에너지 = load_models()
+m_direct_자립, m_direct_1차, m_resid_자립, m_resid_1차, le_dict, feat_cols, f_자립률, f_1차에너지 = load_models()
 df_scatter = load_data()
 
 # ─────────────────────────────────────────────
-# 2. 예측 함수
+# 2. 예측 함수 (앙상블)
 # ─────────────────────────────────────────────
 def predict(지역, 용도, 용도구분, 연면적, 창면적비,
             난방, 냉방, 태양광용량, 후면, 밀착, 지열, 열병합):
@@ -73,14 +75,19 @@ def predict(지역, 용도, 용도구분, 연면적, 창면적비,
         '태양광비율':  태양광비율,
     }])[feat_cols]
 
-    # 보간 + 잔차 합산
-    보간_자립  = float(np.clip(f_자립률(태양광비율),    0,   150))
-    보간_1차   = float(np.clip(f_1차에너지(태양광비율), -50, 300))
-    잔차_자립  = float(m_자립.predict(row)[0])
-    잔차_1차   = float(m_1차.predict(row)[0])
+    # 방법 A: 직접 예측
+    direct_자립 = float(m_direct_자립.predict(row)[0])
+    direct_1차  = float(m_direct_1차.predict(row)[0])
 
-    자립률예측   = float(np.clip(보간_자립  + 잔차_자립, 0,   150))
-    에너지예측1차 = float(np.clip(보간_1차   + 잔차_1차,  -50, 300))
+    # 방법 B: 보간 + 잔차
+    보간_자립 = float(np.clip(f_자립률(태양광비율), 0, 200))
+    보간_1차  = float(np.clip(f_1차에너지(태양광비율), -250, 400))
+    resid_자립 = 보간_자립 + float(m_resid_자립.predict(row)[0])
+    resid_1차  = 보간_1차  + float(m_resid_1차.predict(row)[0])
+
+    # 앙상블: 두 방법의 평균
+    자립률예측   = float(np.clip((direct_자립 + resid_자립) / 2, 0, 200))
+    에너지예측1차 = float(np.clip((direct_1차 + resid_1차) / 2, -250, 400))
 
     # 규칙 기반 등급 계산
     def calc_grade(자립률, 에너지1차, 용도구분):
@@ -195,7 +202,6 @@ st.divider()
 # ─────────────────────────────────────────────
 if st.button("🔍 예측하기", type="primary", use_container_width=True):
 
-    # 용도구분 판단
     용도구분 = "주거용" if '주거' in 건물용도 and '이외' not in 건물용도 else "주거용 이외"
 
     자립률, 에너지1차, 태양광비율, 등급 = predict(
@@ -205,7 +211,6 @@ if st.button("🔍 예측하기", type="primary", use_container_width=True):
         1 if 열병합여부 == '있음' else 0
     )
 
-    # ── 결과 표시 ──────────────────────────────
     st.subheader("📊 예측 결과")
 
     r1, r2, r3 = st.columns(3)
@@ -227,7 +232,6 @@ if st.button("🔍 예측하기", type="primary", use_container_width=True):
         else:
             st.metric(label="🏢 예측 등급", value="❌ 인증불가")
 
-    # 안내 메시지
     if 등급 == '인증불가':
         st.error("⚠️ 현재 조건으로는 인증이 어려워요! 태양광을 늘려보세요!")
     elif 등급 in ['+', '1', '2']:
@@ -239,7 +243,6 @@ if st.button("🔍 예측하기", type="primary", use_container_width=True):
 
     st.divider()
 
-    # ── 탭: 시각화 ─────────────────────────────
     tab1, tab2, tab3 = st.tabs(["📈 태양광 면적별 예측", "🗺️ 전체 데이터 분포", "📊 등급 기준 비교"])
 
     with tab1:
