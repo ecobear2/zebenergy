@@ -28,20 +28,19 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 def load_models():
     m_자립      = joblib.load(os.path.join(BASE_DIR, 'model_자립률.pkl'))
     m_1차       = joblib.load(os.path.join(BASE_DIR, 'model_1차에너지.pkl'))
-    m_등급      = joblib.load(os.path.join(BASE_DIR, 'model_등급.pkl'))
-    le_등급     = joblib.load(os.path.join(BASE_DIR, 'le_등급.pkl'))
     le_dict     = joblib.load(os.path.join(BASE_DIR, 'le_dict.pkl'))
     feat_cols   = joblib.load(os.path.join(BASE_DIR, 'feature_columns.pkl'))
     f_자립률    = joblib.load(os.path.join(BASE_DIR, 'interp_자립률.pkl'))
     f_1차에너지  = joblib.load(os.path.join(BASE_DIR, 'interp_1차에너지.pkl'))
-    return m_자립, m_1차, m_등급, le_등급, le_dict, feat_cols, f_자립률, f_1차에너지
+    return m_자립, m_1차, le_dict, feat_cols, f_자립률, f_1차에너지
+
 
 @st.cache_data
 def load_data():
     scatter = pd.read_csv(os.path.join(BASE_DIR, 'df_scatter.csv'))
     return scatter
 
-m_자립, m_1차, m_등급, le_등급, le_dict, feat_cols, f_자립률, f_1차에너지 = load_models()
+m_자립, m_1차, le_dict, feat_cols, f_자립률, f_1차에너지 = load_models()
 df_scatter = load_data()
 
 # ─────────────────────────────────────────────
