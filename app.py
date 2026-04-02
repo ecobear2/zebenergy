@@ -213,7 +213,7 @@ if st.button("🔍 예측하기", type="primary", use_container_width=True):
     with tab1:
         면적범위 = np.linspace(0, max(태양광면적_입력 * 3, 500), 60)
         자립률예측 = []
-        1차에너지예측 = []
+        에너지예측1차 = []
 
         for 면적 in 면적범위:
             보정 = 면적 / 12 * 태양광효율 if 효율입력여부 else 면적
@@ -222,7 +222,7 @@ if st.button("🔍 예측하기", type="primary", use_container_width=True):
                 지역, 건물용도, 연면적, 창면적비,
                 난방방식, 냉방방식, 지열여부, 열병합여부, 후면)
             자립률예측.append(자립)
-            1차에너지예측.append(에너지)
+            에너지예측1차.append(에너지)
 
         fig1, (ax1a, ax1b) = plt.subplots(1, 2, figsize=(14, 5))
 
@@ -246,7 +246,7 @@ if st.button("🔍 예측하기", type="primary", use_container_width=True):
         ax1a.grid(alpha=0.3)
 
         # 1차에너지 그래프
-        ax1b.plot(면적범위, 1차에너지예측, color='darkorange', linewidth=2.5)
+        ax1b.plot(면적범위, 에너지예측1차, color='darkorange', linewidth=2.5)
         ax1b.axvline(x=태양광면적_입력, color='red', linestyle='--',
                      linewidth=1.5, label=f'현재 입력값 ({태양광면적_입력:.0f}㎡)')
         ax1b.axhline(y=pred_1차에너지, color='blue', linestyle='--',
