@@ -84,10 +84,44 @@ def predict(지역, 용도, 용도구분, 연면적, 창면적비,
     자립률예측   = float(np.clip(보간_자립  + 잔차_자립, 0,   150))
     에너지예측1차 = float(np.clip(보간_1차   + 잔차_1차,  -50, 300))
 
-    등급enc   = m_등급.predict(row)[0]
-    등급예측   = le_등급.inverse_transform([등급enc])[0]
+    # 규칙 기반 등급 계산
+    def calc_grade(자립률, 에너지1차, 용도구분):
+        order = ['+', '1', '2', '3', '4', '5']
+
+        # 자립률 기준
+        if   자립률 >= 120: g1 = '+'
+        elif 자립률 >= 100: g1 = '1'
+        elif 자립률 >= 80:  g1 = '2'
+        elif 자립률 >= 60:  g1 = '3'
+        elif 자립률 >= 40:  g1 = '4'
+        elif 자립률 >= 20:  g1 = '5'
+        else:               g1 = None
+
+        # 1차에너지 기준 (주거용 / 비주거용 다름)
+        if 용도구분 == '주거용':
+            thresholds = [(60,'+'), (90,'1'), (120,'2'),
+                          (150,'3'), (190,'4'), (230,'5')]
+        else:
+            thresholds = [(80,'+'), (140,'1'), (200,'2'),
+                          (260,'3'), (320,'4'), (380,'5')]
+
+        g2 = None
+        for limit, grade in thresholds:
+            if 에너지1차 <= limit:
+                g2 = grade
+                break
+
+        # 둘 중 더 좋은 등급 선택
+        if g1 is None and g2 is None:
+            return '인증불가'
+        if g1 is None: return g2
+        if g2 is None: return g1
+        return g1 if order.index(g1) <= order.index(g2) else g2
+
+    등급예측 = calc_grade(자립률예측, 에너지예측1차, 용도구분)
 
     return 자립률예측, 에너지예측1차, 태양광비율, 등급예측
+
 
 # ─────────────────────────────────────────────
 # 3. UI - 메인 화면 입력폼
